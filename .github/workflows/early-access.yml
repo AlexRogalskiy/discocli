@@ -29,103 +29,61 @@ jobs:
         run: |
           echo ::set-output name=VERSION::$(grep version gradle.properties | cut -d '=' -f 2 | sed 's/^ *//g')
 
-  #  assemble:
-  #    needs: precheck
-  #    if: endsWith(${{ needs.precheck.outputs.VERSION }}, '-SNAPSHOT')
-  #    name: 'Assemble on ${{ matrix.os }}'
-  #    strategy:
-  #      fail-fast: false
-  #      matrix:
-  #        os: [ubuntu-latest, macOS-latest, windows-latest]
-  #    runs-on: ${{ matrix.os }}
-  #    steps:
-  #      - name: Checkout
-  #        uses: actions/checkout@v2
-  #
-  #      - name: Setup Java
-  #        uses: actions/setup-java@v2
-  #        with:
-  #          java-version: ${{ env.JAVA_VERSION }}
-  #          distribution: ${{ env.JAVA_DISTRO }}
-  #
-  #      - uses: actions/cache@v2
-  #        with:
-  #          path: ~/.gradle/caches
-  #          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle') }}-${{ hashFiles('**/gradle.properties') }}
-  #          restore-keys: |
-  #            ${{ runner.os }}-gradle-
-  #
-  #      - uses: actions/cache@v2
-  #        with:
-  #          path: ~/.gradle/wrapper
-  #          key: ${{ runner.os }}-gradlew-${{ hashFiles('**/gradlew') }}
-  #          restore-keys: |
-  #            ${{ runner.os }}-gradlew-
-  #
-  #      - name: Build
-  #        run: ./gradlew copyJdksFromCache build -S
-  #
-  #      - name: 'Add Developer Command Prompt for Microsoft Visual C++'
-  #        if: ${{ runner.os == 'Windows' }}
-  #        uses: ilammy/msvc-dev-cmd@v1
-  #
-  #      - name: Install upx
-  #        run: brew install upx
-  #        if: ${{ runner.os == 'macOS' }}
-  #
-  #      - name: NativeImage
-  #        run: ./gradlew jreleaserAssemble --select-current-platform
-  #
-  #      - name: JReleaser output
-  #        if: always()
-  #        uses: actions/upload-artifact@v2
-  #        with:
-  #          name: jreleaser-assemble-${{ runner.os }}
-  #          path: |
-  #            build/jreleaser/trace.log
-  #            build/jreleaser/output.properties
-  #
-  #      - name: Upload native-image
-  #        uses: actions/upload-artifact@v2
-  #        with:
-  #          retention-days: 1
-  #          name: native-image
-  #          path: |
-  #            build/jreleaser/assemble/discocli/native-image/*.zip
-
-  assemble_aarch64:
+  assemble:
     needs: precheck
     if: endsWith(${{ needs.precheck.outputs.VERSION }}, '-SNAPSHOT')
-    name: 'Assemble on LinuxArm'
-    runs-on: ubuntu-latest
+    name: 'Assemble on ${{ matrix.os }}'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - uses: uraimo/run-on-arch-action@v2.1.1
+      - name: Setup Java
+        uses: actions/setup-java@v2
         with:
-          arch: aarch64
-          distro: ubuntu18.04
-          githubToken: ${{ github.token }}
-          setup: |
-            mkdir -p "${PWD}/artifacts"
-          dockerRunArgs: |
-            --volume "${PWD}/artifacts:/artifacts"
-          shell: /bin/bash
-          install: |
-            apt-get update -q -y && apt-get install -q -y curl unzip zip
-            curl -L https://cdn.azul.com/zulu/bin/zulu17.32.13-ca-jdk17.0.2-linux_aarch64.tar.gz --output zulu17.32.13-ca-jdk17.0.2-linux_aarch64.tar.gz &&
-              tar xfz zulu17.32.13-ca-jdk17.0.2-linux_aarch64.tar.gz &&
-              rm zulu17.32.13-ca-jdk17.0.2-linux_aarch64.tar.gz &&
-              mv zulu17.32.13-ca-jdk17.0.2-linux_aarch64 /jdk &&
-              chmod +x /jdk/bin/*
-          run: |
-            export JAVA_HOME=/jdk
-            export PATH=$JAVA_HOME/bin:$PATH
-            /jdk/bin/java --version
-            ./gradlew --no-daemon copyJdksFromCache build -S
-            ./gradlew --no-daemon jreleaserAssemble --select-current-platform
-            cp build/jreleaser/assemble/discocli/native-image/*.zip /artifacts
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRO }}
+
+      - uses: actions/cache@v2
+        with:
+          path: ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle') }}-${{ hashFiles('**/gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - uses: actions/cache@v2
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradlew-${{ hashFiles('**/gradlew') }}
+          restore-keys: |
+            ${{ runner.os }}-gradlew-
+
+      - name: Build
+        run: ./gradlew copyJdksFromCache build -S
+
+      - name: 'Add Developer Command Prompt for Microsoft Visual C++'
+        if: ${{ runner.os == 'Windows' }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install upx
+        run: brew install upx
+        if: ${{ runner.os == 'macOS' }}
+
+      - name: NativeImage
+        run: ./gradlew jreleaserAssemble --select-current-platform
+
+      - name: JReleaser output
+        if: always()
+        uses: actions/upload-artifact@v2
+        with:
+          name: jreleaser-assemble-${{ runner.os }}
+          path: |
+            build/jreleaser/trace.log
+            build/jreleaser/output.properties
 
       - name: Upload native-image
         uses: actions/upload-artifact@v2
@@ -133,11 +91,11 @@ jobs:
           retention-days: 1
           name: native-image
           path: |
-            "${PWD}/artifacts"
+            build/jreleaser/assemble/discocli/native-image/*.zip
 
   release:
     name: Release
-    needs: [precheck, assemble_aarch64]
+    needs: [precheck, assemble]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
