@@ -2,17 +2,16 @@ import java.text.SimpleDateFormat
 
 plugins {
     id 'java-library'
-    id 'org.javamodularity.moduleplugin' version '1.8.10'
-    id 'org.beryx.jlink'                 version '2.24.4'
-    id 'net.nemerosa.versioning'         version '2.15.1'
+    id 'application'
+    id 'net.nemerosa.versioning' version '2.15.1'
+    id 'org.jreleaser'           version '1.0.0-M2'
+    id 'org.jreleaser.jdks'      version '1.0.0-M2'
 }
 
 description = 'Disco CLI is a command line interface for the foojay.io Disco API'
-mainClassName = "$moduleName/eu.hansolo.discocli/DiscoCLI"
 
 Date buildTimeAndDate = new Date()
 ext {
-    moduleName      = 'eu.hansolo.discocli'
     buildDate       = new SimpleDateFormat('yyyy-MM-dd').format(buildTimeAndDate)
     buildTime       = new SimpleDateFormat('HH:mm:ss.SSSZ').format(buildTimeAndDate)
     ciOssrhUsername = System.getenv('OSSRH_USERNAME')
@@ -23,13 +22,18 @@ ext {
     gpgpassphrase   = System.getenv("PASSPHRASE")
 }
 
+application {
+    mainModule = 'eu.hansolo.discocli'
+    mainClass  = 'eu.hansolo.discocli.DiscoCLI'
+}
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
     implementation      'eu.hansolo:jdktools:17.0.4'
-    implementation      'com.google.code.gson:gson:2.8.9'
+    implementation      'com.google.code.gson:gson:2.9.0'
     implementation      'info.picocli:picocli:4.6.3'
     annotationProcessor 'info.picocli:picocli-codegen:4.6.3'
 }
@@ -38,16 +42,7 @@ compileJava {
     options.compilerArgs += ["-Aproject=${project.group}/${project.name}"]
 }
 
-
 jar {
-    from {
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        configurations.runtimeClasspath.collect {  it.isDirectory() ? it : zipTree(it)  }
-    } {
-        exclude "META-INF/*.SF"
-        exclude "META-INF/*.DSA"
-        exclude "META-INF/*.RSA"
-    }
     manifest {
         attributes(
                 'Built-By'              : System.properties['user.name'],
@@ -64,16 +59,20 @@ jar {
                 'Bundle-Description'    : description,
                 'Bundle-SymbolicName'   : 'eu.hansolo.discocli',
                 'Export-Package'        : 'eu.hansolo.discocli,eu.hansolo.discocli.util',
-                'Class-Path'            : '${project.name}-${project.version}.jar',
                 'Main-Class'            : 'eu.hansolo.discocli.DiscoCLI'
         )
     }
 }
 
+task copyDependencies(type: Copy) {
+    from(configurations.runtimeClasspath)
+    into "${buildDir}/dependencies/flat"
+}
+assemble.dependsOn(copyDependencies)
 
 // start the demo from gradle
 task DiscoCLI(type: JavaExec) {
-    mainClass = "eu.hansolo.discocli/DiscoCLI"
+    mainClass = "eu.hansolo.discocli.DiscoCLI"
     classpath = sourceSets.main.runtimeClasspath
 }
 
@@ -93,4 +92,125 @@ artifacts {
     archives jar
     archives javadocJar
     archives sourcesJar
+}
+
+jdks {
+    //graal17Linux {
+    //    platform = 'linux-x86_64'
+    //    url = 'https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.0.0.2/graalvm-ce-java17-linux-amd64-22.0.0.2.tar.gz'
+    //    checksum = '4f743e0ed3d974b7d619ca2ed6014554e8c12e5ebbb38b9bc9e820b182169bd4'
+    //}
+    graal17LinuxArm {
+        platform = 'linux-aarch64'
+        url = 'https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.0.0.2/graalvm-ce-java17-linux-aarch64-22.0.0.2.tar.gz'
+        checksum = 'c7d78387d2a144944f26773697c1b61d3478a081a1c5e7fc20f47f1f5f3c82c7'
+    }
+    //graal17Osx {
+    //    platform = 'osx-x86_64'
+    //    url = 'https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.0.0.2/graalvm-ce-java17-darwin-amd64-22.0.0.2.tar.gz'
+    //    checksum = 'd54af9d1f4d0d351827395a714ed84d2489b023b74a9c13a431cc9d31d1e8f9a'
+    //}
+    //graal17Windows {
+    //    platform = 'windows-x86_64'
+    //    url = 'https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.0.0.2/graalvm-ce-java17-windows-amd64-22.0.0.2.zip'
+    //    checksum = '8e97b647729d542fdf0062555ca7bca9ee58a29ed10c4ef58aa9e5174b5eeab9'
+    //}
+}
+
+jreleaser {
+    environment {
+        properties.put('graalFilePrefix', 'graalvm-ce-java17-22.0.0.2')
+        properties.put('artifactsDir', 'build/jreleaser/assemble/discocli/native-image')
+    }
+
+    platfomr {
+        replacements.put('aarch_64', 'aarch64')
+    }
+
+    project {
+        website = 'https://github.com/HanSolo/discocli'
+        authors = ['Gerrit Grunwald']
+        license = 'Apache-2.0'
+        extraProperties.put('inceptionYear', '2022')
+    }
+
+    release {
+        github {
+            overwrite = true
+            tagName = '{{projectVersion}}'
+            skipTag = true
+            changelog {
+                formatted = 'ALWAYS'
+                format = '- {{commitShortHash}} {{commitTitle}}'
+                contributors {
+                    format = '- {{contributorName}}'
+                }
+            }
+        }
+    }
+
+    checksum {
+        individual = true
+    }
+
+    assemble {
+        nativeImage {
+            discocli {
+                active = 'ALWAYS'
+                args = ['--no-fallback',
+                        '--enable-https']
+                mainJar {
+                    path = 'build/libs/{{distributionName}}-{{projectVersion}}.jar'
+                }
+                jars {
+                    pattern = 'build/dependencies/flat/*.jar'
+                }
+                files {
+                    pattern = 'LICENSE'
+                }
+                //graalJdk {
+                //    path = 'build/jdks/graal17Osx/{{graalFilePrefix}}/Contents/Home'
+                //    platform = 'osx-x86_64'
+                //}
+                //graalJdk {
+                //    path = 'build/jdks/graal17Linux/{{graalFilePrefix}}'
+                //    platform = 'linux-x86_64'
+                //}
+                graalJdk {
+                    path = 'build/jdks/graal17LinuxArm/{{graalFilePrefix}}'
+                    platform = 'linux-x86_64'
+                }
+                //graalJdk {
+                //    path = 'build/jdks/graal17Windows/{{graalFilePrefix}}'
+                //    platform = 'windows-x86_64'
+                //}
+                upx {
+                    active = 'NEVER'
+                    version = '3.96'
+                }
+            }
+        }
+    }
+
+    distributions {
+        discocli {
+            distributionType = 'NATIVE_IMAGE'
+            //artifact {
+            //    path = '{{artifactsDir}}/{{distributionName}}-{{projectVersion}}-osx-x86_64.zip'
+            //    platform = 'osx-x86_64'
+            //}
+            //artifact {
+            //    path = '{{artifactsDir}}/{{distributionName}}-{{projectVersion}}-linux-x86_64.zip'
+            //    platform = 'linux-x86_64'
+            //}
+            artifact {
+                path = '{{artifactsDir}}/{{distributionName}}-{{projectVersion}}-linux-aarch64.zip'
+                platform = 'linux-aarch64'
+            }
+            //artifact {
+            //    path = '{{artifactsDir}}/{{distributionName}}-{{projectVersion}}-windows-x86_64.zip'
+            //    platform = 'windows-x86_64'
+            //}
+        }
+    }
 }
